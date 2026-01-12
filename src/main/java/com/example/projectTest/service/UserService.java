@@ -1,24 +1,26 @@
 package com.example.projectTest.service;
 
+import com.example.projectTest.dto.CreateUserDto;
+import com.example.projectTest.dto.UpdateUserDto;
 import com.example.projectTest.dto.UserDto;
 import com.example.projectTest.entity.User;
 import com.example.projectTest.exception.DuplicateEmailException;
+import com.example.projectTest.exception.EmptyListException;
 import com.example.projectTest.exception.UserNotFoundException;
-import com.example.projectTest.exception.UsersNotFoundException;
 import com.example.projectTest.mapper.UserMapper;
 import com.example.projectTest.repository.UserRepository;
-import com.example.projectTest.util.ValidationUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 
 @RequiredArgsConstructor
 @Slf4j
-@Transactional
 @Service
 public class UserService {
 
@@ -26,102 +28,78 @@ public class UserService {
 
     private final UserMapper userMapper;
 
-    //---------------Получить всех пользователей------------------
     public List<UserDto> findAll() {
-        log.info("Запустился метод получения всех пользователей в UserService");
+        log.info("Запустился метод получения всех пользователей (findAll) в UserService");
         List<User> users = userRepository.findAll();
         if (users.isEmpty()) {
             log.error("Метод findAll вернул пустой список");
-            throw new UsersNotFoundException();
+            throw new EmptyListException();
         }
-        return users.stream().map(userMapper ::toUserDto).toList();
+        return users.stream().map(userMapper :: toUserDto).toList();
     }
 
-    //------------Создать нового пользователя----------------------
-    public UserDto create(UserDto createUser) {
-        log.info("Запустился метод создания нового пользователя в UserService");
-        ValidationUtils.validateEmail(createUser.getEmail());
-        ValidationUtils.validateName(createUser.getName());
-        ValidationUtils.validateAge(createUser.getAge());
-        checkUniqueEmail(createUser.getEmail());
-        log.info("Email уникален, выполняется создание пользователя...");
-        User newUser = userMapper.toUser(createUser);
-        userRepository.save(newUser);
-        log.info("Пользователь {} успешно создан.", newUser);
-        return userMapper.toUserDto(newUser);
+    public UserDto findById(Long id) {
+        log.info("Запустился метод поиска пользователя по Id (findById) в UserService");
+        Optional<User> user = userRepository.findById(id);
+        if (user.isEmpty()) {
+            log.error("Пользователь с id = {} не найден", id);
+            throw new UserNotFoundException();
+        }
+        return userMapper.toUserDto(user.get());
     }
 
-    //-------Редактировать данные существующего пользователя--------
-    public UserDto update(Long id, String email, String name, Integer age) {
-        log.info("Запустился метод редактирования данных пользователя в UserService");
-        log.info("Проверяем есть ли в базе пользователь с переданым Id = {}.",id);
-        Optional<User> optionalUser = userRepository.findById(id);
+    public UserDto findByEmail(String email) {
+        log.info("Запустился метод поиска пользователя по email (findByEmail) в UserService");
+        Optional<User> optionalUser = userRepository.findByEmail(email);
         if (optionalUser.isEmpty()) {
-            log.error("Пользователь с Id = {} не найден.", id);
-            throw new UserNotFoundException(String.format("Пользователь с id %d не найден.", id));
+            log.error("Пользователь с email = {} не найден", email);
+            throw new UserNotFoundException();
         }
-        log.info("Пользователь с Id = {} найден, начинаем перезапись данных...", id);
-        User user = optionalUser.get();
-        if (email != null && !email.equals(user.getEmail())) {
-            log.info("Проверяем валидность и уникальность Email {}", email);
-            ValidationUtils.validateEmail(email);
-            checkUniqueEmail(email);
-            user.setEmail(email);
-        }
-        if (name != null && !name.equals(user.getName())) {
-            log.info("Проверяем валидность Имени {}", name);
-            ValidationUtils.validateName(name);
-            user.setName(name);
-        }
-        if (age != null && !age.equals(user.getAge())) {
-            log.info("Проверяем валидность возроста {}", age);
-            ValidationUtils.validateAge(age);
-            user.setAge(age);
-        }
-        log.info("Сохраняем новые данные.");
-        userRepository.save(user);
-        return userMapper.toUserDto(user);
+        return userMapper.toUserDto(optionalUser.get());
     }
 
-    //--------------------Удалить пользователя---------------------
-    public void delete(Long id) {
-        log.info("Запустился метод удаления пользователя с Id {} в UserService", id);
-        if (!userRepository.existsById(id)) {
-            log.error("Пользователь для удаления с Id = {} не найден.", id);
-            throw new UserNotFoundException(String.format("Пользователь с id %d не найден.", id));
+    public UserDto create(CreateUserDto createUserDto) {
+        log.info("Запустился метод создания нового пользователя (create) в UserService");
+        try {
+            User newUser = userMapper.toEntity(createUserDto);
+            userRepository.save(newUser);
+            log.info("Пользователь {} успешно создан.", newUser);
+            return userMapper.toUserDto(newUser);
+        } catch (DataIntegrityViolationException ex) {
+            if (Objects.requireNonNull(ex.getRootCause()).getMessage().contains("uk6dotkott2kjsp8vw4d0m25fb7")) {
+                throw new DuplicateEmailException();
+            }
+            log.error("Ошибка при создании пользователя: ", ex);
+            throw ex;
         }
-        log.info("Выполняем удаление пользователя с Id {}", id);
+    }
+
+    public void delete(Long id) {
+        log.info("Запустился метод удаления пользователя (delete) в UserService");
         userRepository.deleteById(id);
     }
 
-    //---------------метод для проверки уникальности email--------------------
-    public void checkUniqueEmail(String email) {
-        log.info("Запустился метод проверки уникальности Email");
-        if (userRepository.existsByEmail(email)) {
-            log.error("Email = {} уже существует в базе.", email);
-            throw new DuplicateEmailException();
-        }
-    }
+    @Transactional
+    public UserDto update(Long id, UpdateUserDto updateUserDto) {
+        log.info("Запустился метод обновления данных пользователя (update) в UserService");
 
-    //----------------------Поиск пользователя по Id-------------------------
-    public UserDto findById(Long id) {
-        log.info("Запустился метод поиска пользователя по Id {}", id);
-        Optional<User> optionalUser = userRepository.findById(id);
-        if (optionalUser.isEmpty()) {
-            throw new UserNotFoundException(String.format("Пользователь с id %d не найден.", id));
-        }
-        User findUser = optionalUser.get();
-        return userMapper.toUserDto(findUser);
-    }
+        User updateUser = userRepository.findById(id)
+                .orElseThrow(UserNotFoundException::new);
 
-    //----------------------Поиск пользователя по Email---------------------
-    public UserDto findByEmail(String email) {
-        log.info("Запустился метод поиска пользователя по email {}", email);
-        Optional<User> optionalUser = userRepository.findByEmail(email);
-        if (optionalUser.isEmpty()) {
-            throw new UserNotFoundException(String.format("Пользователь с email %s не найден.", email));
+        if (updateUserDto.getEmail() != null) updateUser.setEmail(updateUserDto.getEmail());
+        if (updateUserDto.getName() != null) updateUser.setName(updateUserDto.getName());
+        if (updateUserDto.getAge() != null) updateUser.setAge(updateUserDto.getAge());
+        try {
+            userRepository.save(updateUser);
+            userRepository.flush();
+            log.info("Данные пользователя успешно обновленны.");
+            return userMapper.toUserDto(updateUser);
+        } catch (DataIntegrityViolationException ex) {
+            if (Objects.requireNonNull(ex.getRootCause()).getMessage().contains("uk6dotkott2kjsp8vw4d0m25fb7")) {
+                throw new DuplicateEmailException();
+            }
+            log.error("Ошибка при обновлении данных пользователя: ", ex);
+            throw ex;
         }
-        User findUser = optionalUser.get();
-        return userMapper.toUserDto(findUser);
     }
 }

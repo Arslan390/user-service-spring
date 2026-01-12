@@ -1,10 +1,12 @@
 package com.example.projectTest.controller;
 
+import com.example.projectTest.dto.CreateUserDto;
+import com.example.projectTest.dto.UpdateUserDto;
 import com.example.projectTest.dto.UserDto;
 import com.example.projectTest.service.UserService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -17,41 +19,34 @@ public class UserController {
     private final UserService userService;
 
     @GetMapping
-    public ResponseEntity<List<UserDto>> findAll() {
-        List<UserDto> users = userService.findAll();
-        return ResponseEntity.status(HttpStatus.OK).body(users);
+    public List<UserDto> getUsers() {
+        return userService.findAll();
     }
 
     @GetMapping("{id}")
-    public ResponseEntity<UserDto> findById(@PathVariable Long id) {
-        UserDto user = userService.findById(id);
-        return ResponseEntity.status(HttpStatus.OK).body(user);
+    public UserDto getUser(@PathVariable Long id) {
+        return userService.findById(id);
     }
 
     @GetMapping("/findByEmail")
-    public ResponseEntity<UserDto> findByEmail(@RequestParam String email) {
-        UserDto user = userService.findByEmail(email);
-        return ResponseEntity.status(HttpStatus.OK).body(user);
+    public UserDto getUserByEmail(@RequestParam String email) {
+        return userService.findByEmail(email);
     }
 
     @PostMapping
-    public ResponseEntity<UserDto> create(@RequestBody UserDto createUser) {
-        UserDto user = userService.create(createUser);
-        return ResponseEntity.status(HttpStatus.CREATED).body(user);
-    }
-
-    @PutMapping("{id}")
-    public ResponseEntity<UserDto> update(@PathVariable Long id,
-                                          @RequestParam(required = false) String email,
-                                          @RequestParam(required = false) String name,
-                                          @RequestParam(required = false) Integer age) {
-        UserDto user = userService.update(id, email, name, age);
-        return ResponseEntity.status(HttpStatus.OK).body(user);
+    @ResponseStatus(HttpStatus.CREATED)
+    public UserDto createUser(@RequestBody @Valid CreateUserDto createUserDto) {
+        return userService.create(createUserDto);
     }
 
     @DeleteMapping("{id}")
-    public ResponseEntity<Void> delete(@PathVariable Long id) {
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void deleteUser(@PathVariable Long id) {
         userService.delete(id);
-        return ResponseEntity.noContent().build();
+    }
+
+    @PutMapping("{id}")
+    public UserDto updateUser(@PathVariable Long id, @RequestBody @Valid UpdateUserDto updateUserDto) {
+        return userService.update(id, updateUserDto);
     }
 }

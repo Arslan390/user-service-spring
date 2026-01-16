@@ -7,6 +7,7 @@ import com.example.projectTest.entity.User;
 import com.example.projectTest.exception.DuplicateEmailException;
 import com.example.projectTest.exception.EmptyListException;
 import com.example.projectTest.exception.UserNotFoundException;
+import com.example.projectTest.kafka.UserEventProducer;
 import com.example.projectTest.mapper.UserMapper;
 import com.example.projectTest.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -27,6 +28,9 @@ public class UserService {
     private final UserRepository userRepository;
 
     private final UserMapper userMapper;
+
+    private final UserEventProducer userEventProducer;
+
 
     public List<UserDto> findAll() {
         log.info("Запустился метод получения всех пользователей (findAll) в UserService");
@@ -64,6 +68,7 @@ public class UserService {
             User newUser = userMapper.toEntity(createUserDto);
             userRepository.save(newUser);
             log.info("Пользователь {} успешно создан.", newUser);
+            userEventProducer.send("CREATED", newUser.getEmail());
             return userMapper.toUserDto(newUser);
         } catch (DataIntegrityViolationException ex) {
             if (Objects.requireNonNull(ex.getRootCause()).getMessage().contains("uk6dotkott2kjsp8vw4d0m25fb7")) {
@@ -76,7 +81,10 @@ public class UserService {
 
     public void delete(Long id) {
         log.info("Запустился метод удаления пользователя (delete) в UserService");
+        User deleteUser = userRepository.findById(id)
+                .orElseThrow(UserNotFoundException::new);
         userRepository.deleteById(id);
+        userEventProducer.send("DELETED", deleteUser.getEmail());
     }
 
     @Transactional

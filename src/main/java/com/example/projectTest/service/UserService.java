@@ -10,6 +10,7 @@ import com.example.projectTest.exception.UserNotFoundException;
 import com.example.projectTest.kafka.UserEventProducer;
 import com.example.projectTest.mapper.UserMapper;
 import com.example.projectTest.repository.UserRepository;
+import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -32,6 +33,7 @@ public class UserService {
     private final UserEventProducer userEventProducer;
 
 
+    @CircuitBreaker(name = "userService", fallbackMethod = "fallbackFindAll")
     public List<UserDto> findAll() {
         log.info("Запустился метод получения всех пользователей (findAll) в UserService");
         List<User> users = userRepository.findAll();
@@ -42,6 +44,7 @@ public class UserService {
         return users.stream().map(userMapper :: toUserDto).toList();
     }
 
+    @CircuitBreaker(name = "userService", fallbackMethod = "fallbackFindById")
     public UserDto findById(Long id) {
         log.info("Запустился метод поиска пользователя по Id (findById) в UserService");
         Optional<User> user = userRepository.findById(id);
@@ -52,6 +55,7 @@ public class UserService {
         return userMapper.toUserDto(user.get());
     }
 
+    @CircuitBreaker(name = "userService", fallbackMethod = "fallbackFindByEmail")
     public UserDto findByEmail(String email) {
         log.info("Запустился метод поиска пользователя по email (findByEmail) в UserService");
         Optional<User> optionalUser = userRepository.findByEmail(email);
@@ -62,6 +66,7 @@ public class UserService {
         return userMapper.toUserDto(optionalUser.get());
     }
 
+    @CircuitBreaker(name = "userService", fallbackMethod = "fallbackCreate")
     public UserDto create(CreateUserDto createUserDto) {
         log.info("Запустился метод создания нового пользователя (create) в UserService");
         try {
@@ -79,6 +84,7 @@ public class UserService {
         }
     }
 
+    @CircuitBreaker(name = "userService", fallbackMethod = "fallbackDelete")
     public void delete(Long id) {
         log.info("Запустился метод удаления пользователя (delete) в UserService");
         User deleteUser = userRepository.findById(id)
@@ -87,6 +93,7 @@ public class UserService {
         userEventProducer.send("DELETED", deleteUser.getEmail());
     }
 
+    @CircuitBreaker(name = "userService", fallbackMethod = "fallbackUpdate")
     @Transactional
     public UserDto update(Long id, UpdateUserDto updateUserDto) {
         log.info("Запустился метод обновления данных пользователя (update) в UserService");
@@ -109,5 +116,46 @@ public class UserService {
             log.error("Ошибка при обновлении данных пользователя: ", ex);
             throw ex;
         }
+    }
+
+    // === FALLBACK-МЕТОДЫ ===
+
+    private List<UserDto> fallbackFindAll(Exception e) {
+        log.warn("[Circuit Breaker] findAll fallback вызван. Причина: {}", e.getMessage(), e);
+        return List.of();
+    }
+
+    private UserDto fallbackFindById(Long id, Exception e) {
+        log.warn("[Circuit Breaker] findById fallback вызван для id={}. Причина: {}", id, e.getMessage(), e);
+        return UserDto.builder()
+                .id(id)
+                .name("Недоступно")
+                .email("unknown@example.com")
+                .age(0)
+                .build();
+    }
+
+    private UserDto fallbackFindByEmail(String email, Exception e) {
+        log.warn("[Circuit Breaker] findByEmail fallback вызван для email={}. Причина: {}", email, e.getMessage(), e);
+        return UserDto.builder()
+                .name("Недоступно")
+                .email(email)
+                .age(0)
+                .build();
+    }
+
+    private UserDto fallbackCreate(CreateUserDto createUserDto, Exception e) {
+        log.error("[Circuit Breaker] create fallback вызван. Данные пользователя: {}. Причина: {}", createUserDto, e.getMessage(), e);
+        return null;
+    }
+
+    private void fallbackDelete(Long id, Exception e) {
+        log.error("[Circuit Breaker] delete fallback вызван для id={}. Причина: {}", id, e.getMessage(), e);
+    }
+
+    private UserDto fallbackUpdate(Long id, UpdateUserDto updateUserDto, Exception e) {
+        log.error("[Circuit Breaker] update fallback вызван для id={}. Данные обновления: {}. Причина: {}",
+                id, updateUserDto, e.getMessage(), e);
+        return null;
     }
 }
